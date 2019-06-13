@@ -35,6 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define CAN_THRAD_STACK_SIZE 512
 
 /* USER CODE END PD */
 
@@ -44,14 +45,14 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-CAN_HandleTypeDef hcan1;
-
 UART_HandleTypeDef huart3;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
+uint32_t defaultTaskBuffer[ CAN_THRAD_STACK_SIZE ];
+osStaticThreadDef_t defaultTaskControlBlock;
 
 /* USER CODE END PV */
 
@@ -60,7 +61,6 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
-static void MX_CAN1_Init(void);
 
 /* USER CODE BEGIN PFP */
 extern "C" {
@@ -70,7 +70,13 @@ extern "C" {
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+constexpr unsigned NodePoolSize = 8192;
+uavcan_stm32::CanInitHelper<> can;
 
+uavcan::Node<NodePoolSize>& getNode() {
+    static uavcan::Node<NodePoolSize> node(can.driver, uavcan_stm32::SystemClock::instance());
+    return node;
+}
 /* USER CODE END 0 */
 
 /**
@@ -104,9 +110,22 @@ int main(void)
   MX_GPIO_Init();
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
-  MX_CAN1_Init();
   /* USER CODE BEGIN 2 */
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
+  __HAL_RCC_CAN1_CLK_ENABLE();
+
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  /**CAN1 GPIO Configuration
+  PD0     ------> CAN1_RX
+  PD1     ------> CAN1_TX
+  */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF9_CAN1;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -127,7 +146,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadStaticDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, CAN_THRAD_STACK_SIZE, defaultTaskBuffer, &defaultTaskControlBlock);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -198,43 +217,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief CAN1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_CAN1_Init(void)
-{
-
-  /* USER CODE BEGIN CAN1_Init 0 */
-
-  /* USER CODE END CAN1_Init 0 */
-
-  /* USER CODE BEGIN CAN1_Init 1 */
-
-  /* USER CODE END CAN1_Init 1 */
-  hcan1.Instance = CAN1;
-  hcan1.Init.Prescaler = 16;
-  hcan1.Init.Mode = CAN_MODE_NORMAL;
-  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan1.Init.TimeSeg1 = CAN_BS1_1TQ;
-  hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
-  hcan1.Init.TimeTriggeredMode = DISABLE;
-  hcan1.Init.AutoBusOff = DISABLE;
-  hcan1.Init.AutoWakeUp = DISABLE;
-  hcan1.Init.AutoRetransmission = DISABLE;
-  hcan1.Init.ReceiveFifoLocked = DISABLE;
-  hcan1.Init.TransmitFifoPriority = DISABLE;
-  if (HAL_CAN_Init(&hcan1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN CAN1_Init 2 */
-
-  /* USER CODE END CAN1_Init 2 */
-
 }
 
 /**
@@ -369,13 +351,25 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_1 */
 void StartDefaultTask(void const * argument)
 {
+  uint32_t value = 1000000;
+  can.init(value);
+
+  getNode().setName("org.mrazgunas.test");
+  getNode().setNodeID(5);
+
+  if (getNode().start() < 0) {
+    //DEBUG_Printf("UAVCAN init fail\r\n");
+    while (1);
+  }
+
+  getNode().setModeOperational();
 
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)
   {
+    const int res = getNode().spin(uavcan::MonotonicDuration::fromMSec(1000));
     HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-    osDelay(500);
   }
   /* USER CODE END 5 */
 }
