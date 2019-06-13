@@ -60,7 +60,22 @@ static void MX_GPIO_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_CAN1_Init(void);
-void StartDefaultTask(void *argument); // for v2
+
+extern "C" {
+void StartDefaultTask(void *argument)
+{
+
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+    HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
+    osDelay(500);
+  }
+  /* USER CODE END 5 */
+}
+
+}
 
 /* USER CODE BEGIN PFP */
 
@@ -127,11 +142,14 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  const osThreadAttr_t defaultTask_attributes = {
-    .name = "defaultTask",
-    .priority = (osPriority_t) osPriorityNormal,
-    .stack_size = 128
-  };
+  osThreadAttr_t defaultTask_attributes;
+
+  defaultTask_attributes.name = "defaultTask";
+  defaultTask_attributes.priority = (osPriority_t) osPriorityAboveNormal;
+  defaultTask_attributes.cb_mem = NULL;
+  defaultTask_attributes.cb_size = 0;
+  defaultTask_attributes.stack_mem = NULL;
+  defaultTask_attributes.stack_size = 128;
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -371,18 +389,6 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
-{
-
-  /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {
-    HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
-    osDelay(500);
-  }
-  /* USER CODE END 5 */ 
-}
 
 /**
   * @brief  Period elapsed callback in non blocking mode
